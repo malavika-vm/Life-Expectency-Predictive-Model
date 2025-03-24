@@ -77,24 +77,24 @@ We attempted to incorporate life expectancy from the previous year as a predicto
 
 ---
 
-## 📂 Repository Structure
+##  Repository Structure
 
-📄 data.csv #original data from WHO
-📄 data_cleaning.R  #R code to clean and organise the data
-📄 Fitting_Models.R #R code to detect outliers and fitting various linear models
-📄 README.md # Project summary and structure
-📄 requirements.R # R packages
+📄 data.csv #original data from WHO.
+📄 data_cleaning.R  #R code to clean and organise the data.
+📄 Fitting_Models.R #R code to detect outliers and fitting various linear models.
+📄 README.md # Project summary and structure.
+📄 requirements.R # R packages.
 
 
 ---
 
-## 💻 Reproducibility & Version Control
+##  Reproducibility & Version Control
 
 From the beginning of the project, we emphasized **reproducibility**. All code was tracked using **Git**, and we maintained clear documentation and structure to support collaboration and transparency.
 
 ---
 
-## 🚀 Future Work
+##  Future Work
 
 - Apply **nonlinear regression models** for temporal predictions  
 - Deepen the time series analysis using ARIMA or LSTM  
