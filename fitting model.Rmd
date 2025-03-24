@@ -1,0 +1,259 @@
+---
+title: "fitting model"
+output: html_document
+date: "2023-12-02"
+---
+Data cleaning
+```{r}
+library(tidyverse)
+#import
+file_id <- '1EFdMMtY56ratuqrveLGKebSsnohxM-Cf'
+file_link <- sprintf('https://drive.google.com/uc?id=%s', file_id)
+df=read_csv(file_link)
+colnames(df)=c("Country", "Year", "Status", "Life.expectancy", "Adult.Mortality", "infant.deaths", "Alcohol", "percentage.expenditure", "Hepatitis.B", "Measles", "BMI", "under.five.deaths", "Polio", "Total.expenditure", "Diphtheria", "HIV/AIDS", "GDP", "Population", "thinness.1.19.years", "thinness.5.9.years", "Income.composition.of.resources", "Schooling"
+)
+#filter
+country_years <- df %>%
+  group_by(Country) %>%
+  summarise(unique_years = n_distinct(Year))
+countries_with_16_year <- country_years$Country[country_years$unique_years == 16]
+df=df%>%filter(Country %in% countries_with_16_year)
+df=df%>%mutate(le1= lead(Life.expectancy, default = NA))
+df=df%>%filter(Year %in% 2001:2015)
+df=na.omit(df)
+df <- df %>% rownames_to_column(var = "index") %>% select(-index)
+df$Status=as.factor(df$Status)
+df$Country=as.factor((df$Country))
+```
+
+fit original model
+```{r}
+model=lm(Life.expectancy~.-Country,df)
+summary(model)
+```
+Low number of significant variables prompts us to check for influential outlier that might be deviating the linear model substancially.
+
+Each of the methods produced different subsets of inluential points, leaving the common observations to be only 8. 
+
+Hence we decided to go ahead with DFBETAS method since it emphasizes on parameter accuracy and detects influential points that might be affecting the estimates of the parameters.
+
+Our aim is to determine what factors can actually contribute to life expectancy in a country, hence this method aligns with our goal.
+
+Apply Dfbetas
+```{r}
+2/sqrt(1588)
+remove1=which(rowSums(abs(dfbetas(model)) > 0.05018856) > 0)
+df4=df[-remove1,]
+df4<- df4 %>% rownames_to_column(var = "index") %>% select(-index)
+model4=lm(Life.expectancy~.-Country,df4)
+summary(model4)
+
+```
+
+Split data into test and train
+
+```{r}
+sample <- sample.int(n = nrow(df4), size = floor(.8*nrow(df4)), replace = F)
+train <- df4[sample, ]
+test  <- df4[-sample, ]
+lm1=lm(Life.expectancy~.-Country,train)
+```
+
+
+```{r}
+backward=step(lm1, direction="backward")
+
+backmodel=lm(Life.expectancy ~ Year + Alcohol + percentage.expenditure + Measles + 
+    BMI + under.five.deaths + Polio + Total.expenditure + `HIV/AIDS` + 
+    thinness.1.19.years + thinness.5.9.years + Schooling + le1,train)
+pred=predict(backmodel,test)
+r01=rmse(fitted(backmodel),train$Life.expectancy)
+r02=rmse(pred,test$Life.expectancy)
+c(r01,r02)
+
+pred1=predict(lm1,test)
+r01=rmse(fitted(lm1),train$Life.expectancy)
+r02=rmse(pred1,test$Life.expectancy)
+c(r01,r02)
+```
+
+RESIDUAL ANALYSIS
+
+*Autocorrelation*
+```{r}
+library(car)
+durbinWatsonTest(lm1)
+```
+
+result: p value is greater than 5% implying that AC is absent
+
+*Heteroscedasticity*
+
+```{r}
+plot(lm1,1)
+```
+
+the plot depicts no noteworthy pattern, hence the random band around zero is sufficient to show homoscedasticity
+
+*Multicollinearity*
+
+```{r}
+vif(lm1)
+```
+Note that, under five deaths and infant deaths have the highest vif values and intuitively we are safe to assume that they will definitely have some overlap/ relationship. 
+
+Similarly, percentage expenditure and GDP are quite related based on their formula and hence we can take out one of them and still retain all the information required and available.
+
+```{r}
+lm0=lm(Life.expectancy~.,train[,-c(1,6,8)]) #removed country, infant deaths and % expenditure
+vif(lm0)
+```
+We can now work with these many variables and start variable selection process.
+
+Updating the train and test based on vif elimination:
+
+```{r}
+train$Status=(ifelse(train$Status=="Developed",1,0))
+test$Status=(ifelse(test$Status=="Developed",1,0))
+train2=train[,-c(1,6,8)]
+test2=test[,-c(1,6,8)]
+```
+
+**Principal Component**
+```{r}
+pca=prcomp(train2[,-3],scale=T) #remove y
+summary(pca)
+```
+The first few PCs fail to capture a significant amount of variance in y, we still go ahead with selecting the PCs, adding one at each stage.
+
+```{r}
+lmpc=lm(Life.expectancy~pca$x[,1:2],train2)
+lmpc1=lm(Life.expectancy~pca$x[,1:3],train2)
+lmpc2=lm(Life.expectancy~pca$x[,1:4],train2)
+lmpc3=lm(Life.expectancy~pca$x[,1:5],train2)
+lmpc4=lm(Life.expectancy~pca$x[,1:6],train2)
+lmpc5=lm(Life.expectancy~pca$x[,1:7],train2)
+lmpc6=lm(Life.expectancy~pca$x[,1:8],train2)
+AIC(lmpc)
+AIC(lmpc1)
+AIC(lmpc2)
+AIC(lmpc3)
+AIC(lmpc4)
+AIC(lmpc5) #5002
+AIC(lmpc6)#5004
+
+```
+The AIC values spike at the 6th model with 8 variables, hence we assess the performance of 5th model
+
+```{r}
+pc=predict(lmpc5,test2)
+rmse=function(x,y){sqrt(mean((x-y)^2))}
+r1=rmse(fitted(lmpc5),train2$Life.expectancy)
+r2=rmse(pc,test2$Life.expectancy)
+c(r1,r2)
+```
+The rmse value is higher for test data, implying the test data fits worse than the train. 
+
+*PARTIAL LEAST SQUARE REGRESSION*
+
+```{r}
+library(pls)
+plsmod=plsr(Life.expectancy~.,data=train2,ncomp=7)
+summary(plsmod)
+pd=predict(plsmod,test2)
+r7=rmse(fitted(plsmod),train2$Life.expectancy)
+r8=rmse(pd,test2$Life.expectancy)
+c(r7,r8)
+```
+The value of rmse has halved compared to principal component model, indicating that the data fits this model better. Even the comparison between train and test indicates that test data fits the model better.
+
+We now check if LASSO and Ridge methods show any further improvement.
+
+*ridge*
+```{r}
+library(glmnet)
+x=model.matrix(Life.expectancy~.,train2)
+y=scale(train2$Life.expectancy)
+fit_ridge=glmnet(x,y,alpha = 0,intercept = F)
+plot(fit_ridge,xvar="lambda",label=T)
+```
+
+```{r}
+cv_ridge=cv.glmnet(x,y,alpha=0,intercept=F)
+plot(cv_ridge)
+```
+
+```{r}
+best_model_lam=cv_ridge$lambda.min
+final_ridge=glmnet(x[,-1],y,alpha = 0,lambda = best_model_lam)
+summary(final_ridge)
+pe=predict(final_ridge,scale(test2[,-3]))
+rmse(fitted(final_ridge),train2$Life.expectancy)
+rmse(pe,test2$Life.expectancy)
+```
+Very large rmse value discourages us to use this method for our study.
+
+*lasso*
+
+```{r}
+fit_lasso=glmnet(x,y)
+plot(fit_lasso)
+```
+```{r}
+cv_lasso=cv.glmnet(x[,-1],y)
+plot(cv_lasso)
+```
+
+```{r}
+best_model_lambda <- cv_lasso$lambda.min
+best_model_coef <- coef(cv_lasso, s = best_model_lambda)
+best_model_coef
+```
+We see that it has chosen the above variables to be the best for the model.
+```{r}
+selected_variables <- c(1,4,11,14,18,19,20)
+final_lasso= glmnet(x[,selected_variables ], y, alpha = 1, lambda = best_model_lambda)
+pf= predict(final_lasso, newx = scale(test2[,selected_variables]))
+rmse(fitted(final_lasso),train2$Life.expectancy)
+rmse(pf,test2$Life.expectancy)
+
+```
+
+Yet, we don't get a favourable rmse value, hence we can return to our partial least squares method that produced the least rmse value.
+
+
+```{r}
+trees=read.table('http://rls.sites.oasis.unc.edu/faculty/rs/source/Data/tree.dat',header=T)
+y=log(trees$vol)
+x1=log(trees$diam)
+x2=log(trees$ht)
+par(mfrow=c(1,2))
+plot(x1,y,xlab='Log Diameter',ylab='Log Volume',pch=20)
+plot(x2,y,xlab='Log Height',ylab='Log Volume',pch=20)
+lm1=lm(y~x1+x2)
+summary(lm1)
+
+# test whether beta_1=2, beta_2=1
+y1=y-2*x1-x2
+lm2=lm(y1~x1+x2)
+lm3=lm(y1~1)
+anova(lm3,lm2)
+
+par(mfrow=c(2,2))
+x1c=x1-mean(x1)
+x2c=x2-mean(x2)
+plot(x1c,lm1$resid,ylab='Residual',xlab='x1c',pch=20)
+plot(x2c,lm1$resid,ylab='Residual',xlab='x2c',pch=20)
+plot(x1c*x2c,lm1$resid,ylab='Residual',xlab='x1c*x2c',pch=20)
+plot(lm1$fitted,lm1$resid,ylab='Residual',xlab='Fitted Value',pch=20)
+
+gofsim(y,cbind(x1,x2),1,10000)
+
+# tests of outliers in tree data
+
+sort(rstandard(lm1))
+sort(rstudent(lm1))
+?qf(0.,3,28)
+2*pt(-2.32572,27)
+```
+
