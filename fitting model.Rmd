@@ -222,38 +222,4 @@ rmse(pf,test2$Life.expectancy)
 Yet, we don't get a favourable rmse value, hence we can return to our partial least squares method that produced the least rmse value.
 
 
-```{r}
-trees=read.table('http://rls.sites.oasis.unc.edu/faculty/rs/source/Data/tree.dat',header=T)
-y=log(trees$vol)
-x1=log(trees$diam)
-x2=log(trees$ht)
-par(mfrow=c(1,2))
-plot(x1,y,xlab='Log Diameter',ylab='Log Volume',pch=20)
-plot(x2,y,xlab='Log Height',ylab='Log Volume',pch=20)
-lm1=lm(y~x1+x2)
-summary(lm1)
-
-# test whether beta_1=2, beta_2=1
-y1=y-2*x1-x2
-lm2=lm(y1~x1+x2)
-lm3=lm(y1~1)
-anova(lm3,lm2)
-
-par(mfrow=c(2,2))
-x1c=x1-mean(x1)
-x2c=x2-mean(x2)
-plot(x1c,lm1$resid,ylab='Residual',xlab='x1c',pch=20)
-plot(x2c,lm1$resid,ylab='Residual',xlab='x2c',pch=20)
-plot(x1c*x2c,lm1$resid,ylab='Residual',xlab='x1c*x2c',pch=20)
-plot(lm1$fitted,lm1$resid,ylab='Residual',xlab='Fitted Value',pch=20)
-
-gofsim(y,cbind(x1,x2),1,10000)
-
-# tests of outliers in tree data
-
-sort(rstandard(lm1))
-sort(rstudent(lm1))
-?qf(0.,3,28)
-2*pt(-2.32572,27)
-```
 
